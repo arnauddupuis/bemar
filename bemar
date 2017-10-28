@@ -1,0 +1,179 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use File::Copy;
+use Data::Dumper;
+
+##########################################
+#
+# bemar: Batch Episodes Move And Rename
+#
+# @author: Arnaud Dupuis
+# @license: MIT
+# @version: 0.1
+#
+##########################################
+
+my $DEBUG=1;
+my $POST_CLEANING_DEFAULTS='..:.,...:.,\s:.';
+my @ARRAY_KEYS = ('scan','post_cleaning_rules');
+my $config = {};
+# Sections will be stored in RAM to avoid a call to keys() for every file.
+my @sections = ();
+
+sub debug_print {
+	return unless $DEBUG;
+	print "[debug] ",@_;
+}
+
+sub ls {
+	my $dir = shift;
+	opendir(my $dh, $dir) or die "Can't open directory $dir for reading\n";
+	my @content = ();
+	while(readdir $dh) {
+		next if(/^\./);
+		debug_print " (ls $dir) Adding content: $_\n";
+		push @content,$_;
+	}
+	closedir $dh;
+	return(@content);
+}
+
+sub recursive_ls {
+	my $input = shift;
+	my @files = ();
+	foreach my $el (ls($input)){
+		if(-d "$input/$el"){
+			
+			push @files, recursive_ls("$input/$el");
+		}
+		else{
+			debug_print " (recursive_ls) pushing file: $input/$el\n";
+			push @files, "$input/$el";
+		}
+	}
+	return @files;
+}
+
+sub loadConfig {
+	my $config_file=shift;
+	open(my $fh,"<",$config_file) or die "Can't open $config_file for reading\n";
+	my $current_section = "";
+	my $config_file_current_line_number=0;
+	while(my $line = <$fh>){
+		$config_file_current_line_number++;
+		chomp($line);
+		next if($line =~ /^\s*#/);
+		next if($line =~ /^\s*$/);
+		if((defined($current_section) && $current_section ne '') && $line =~ /^\s*([^=]+)\s*=\s*(.+)\s*$/){
+			debug_print "\t\t(current_section=$current_section) config defines '$1' with value '$2'\n";
+			$config->{$current_section}->{$1} = $2;
+		}
+		elsif($line =~ /^\s*\[([^\]]+)\]/){
+			debug_print "\tnew section: $1\n";
+			if($1 eq 'general'){
+				$config->{$1}={
+					scan => []
+				};
+			}
+			elsif(!defined($config->{$1})){
+				debug_print "Section $1 is not yet defined\n";
+				$config->{$1}={
+					post_cleaning_rules=>$POST_CLEANING_DEFAULTS,
+					pattern => "",
+					post_cleaning => 1,
+					file_only =>0,
+					destination => ''
+				};
+				push @sections, $1;
+			}
+			$current_section=$1;
+		}
+		else{
+			print "[warning] '$line' is neither a comment nor a valid config line !\n";
+		}
+	}
+	close($fh);
+	foreach my $section (keys(%{$config})){
+		unless($section eq 'general'){
+			die "No destination set for section '$section'\n" unless( defined($config->{$section}->{'destination'}) && $config->{$section}->{'destination'} ne '');
+			die "No pattern set for section '$section'\n" unless( defined($config->{$section}->{'pattern'}) && $config->{$section}->{'pattern'} ne '');
+		}
+		foreach my $array_key (@ARRAY_KEYS){
+			if(defined($config->{$section}->{$array_key})){
+				$config->{$section}->{$array_key} = [split(/\s*,\s*/,$config->{$section}->{$array_key})];
+			}
+		}
+		if(defined($config->{$section}->{'pattern'})){
+			$config->{$section}->{'pattern'} = qr/$config->{$section}->{'pattern'}/;
+		}
+	}
+	debug_print "SECTIONS: ",join(',',@sections),"\n";
+	debug_print "DATA STRUCT:\n",Data::Dumper::Dumper($config),"\n";
+}
+
+sub parseName {
+	my $name = shift;
+	my $variables = {};
+	if( $name =~ m/s(\d+)e(\d+)/i ){
+		debug_print " (parseName) found season=$1 and episode=$2\n";
+		$variables->{'season_number'} = $1;
+		$variables->{'episode_number'} = $2;
+	}
+	if( $name =~ m/[\s\.\[\(]{1}(\d+)(p|k)[\s\.\]\)]{1}/i ){
+		debug_print " (parseName) found quality=$1$2\n";
+		$variables->{'episode_quality'} = "$1$2";
+	}
+	if( $name =~ m/\.(.[^\.]+)$/i ){
+		debug_print " (parseName) found file extension=$1\n";
+		$variables->{'file_extension'} = $1;
+	}
+	return $variables;
+}
+
+sub replaceVariables {
+	my ($file_name,$variables) = @_;
+	foreach my $var (keys(%{$variables})){
+		$file_name =~ s/\{$var\}/$variables->{$var}/gi;
+	}
+	return $file_name;
+}
+
+die "Please pass a configuration file as first argument. Example: $0 bemar.cfg\n" unless(defined($ARGV[0]));
+
+my $arg_config_file = $ARGV[0];
+loadConfig($arg_config_file);
+
+foreach my $source_directory (@{$config->{'general'}->{'scan'}}){
+	debug_print "SCANNING: $source_directory\n";
+	next unless( -e $source_directory && -d $source_directory);
+	foreach my $dir_content (ls($source_directory)){
+# 		debug_print "\tCONTENT: ($source_directory) $dir_content\n";
+		foreach my $section (@sections){
+			if($dir_content =~ m/$config->{$section}->{'pattern'}/i){
+				debug_print "\t\t$dir_content match the pattern from '$section'\n";
+				if( -d "$source_directory/$dir_content"){
+					if($config->{$section}->{'file_only'}){
+# 						debug_print "\t\t\tFILE_ONLY OPTION ACTIVE => SWITCHING TO RECURSIVE SCANNING MODE\n";
+						my @file_list = recursive_ls("$source_directory/$dir_content");
+# 						debug_print "\t\t\t\tFILE LIST: ",join(',',@file_list),"\n";
+						foreach my $sub_dir_content (@file_list){
+							my $variables = parseName($sub_dir_content);
+							my $destination_file = replaceVariables($config->{$section}->{'destination'},$variables);
+							debug_print "\t\t\tMOVING FILE: mv $sub_dir_content $destination_file (from template destination: $config->{$section}->{'destination'})\n";
+						}
+					}
+					else{
+						debug_print "\t\t\tMOVING WHOLE DIRECTORY TO DESTINATION\n";
+					}
+				}
+				else{
+					my $variables = parseName($dir_content);
+					my $destination_file = replaceVariables($config->{$section}->{'destination'},$variables);
+					debug_print "\t\t\tMOVING FILE: mv $source_directory/$dir_content $destination_file (from template destination: $config->{$section}->{'destination'})\n";
+				}
+			}
+		}
+	}
+}
