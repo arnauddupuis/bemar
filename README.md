@@ -23,7 +23,7 @@ With:
   * **YY** is the episode number
 Season and episode number will then be expended as {season_number} and {episode_number} variables.
 
-If the episode also have a quality (like "1080p" for example) it will also be captured as {episode_quality}. Bemar only recognize quality when it's a number followed by "p" or "k" (like "480p", "720p", "1080p", "4k"). It has to be a standalone string (separate from the rest by spaces or dots). 
+If the episode also have a quality (like "1080p" for example) it will also be captured as {episode_quality}. Bemar only recognize quality when it's a number followed by "p" or "k" (like "480p", "720p", "1080p", "4k"). It has to be a standalone string (separate from the rest by spaces, "()", "[]" or dots). 
 
 ## Variables
 
@@ -31,4 +31,35 @@ bemar will capture a couple of informations from the file title and make it avai
   * {season_number}: the season number
   * {episode_number}: the episode number
   * {episode_quality}: the episode quality 
-  * 
+  * {file_extension}: the file extension (mp4, mkv, etc.)
+  * {serie_name}: the serie name. **Warning**: bemar will try to extract the serie name but you should not trust it too much...
+  
+## Configuration file
+
+The configuration file has 2 separate typeof sections the \[general\] and the series ones. It looks like that:
+```
+[general]
+# scan is the list of directories to scan for series episodes. This is a comma separated list.
+scan=/home/plex/Downloads,/home/plex/BT/Series
+
+[The Flash]
+# The pattern is a PCRE (Perl Compatible Regular Expression) pattern. It is case insensitive.
+pattern=The\.\Flash\.2014\..*
+# destination is (obviously) the destination of the file that match the pattern.
+destination=/home/plex/Medias/Series/The.Flash.2014/Season_{season_number}/The.Flash.2014.S{season_number}E{episode_number}.{episode_quality}.{file_extension}
+# post_cleaning allow for extra characters removing or replacement. This is a yes/no value.
+post_cleaning=yes
+# these are post cleaning rules the form is <characters to replace>:<characters replacement>. It is a comma separated list. The following is the default value.
+post_cleaning_rules=..:.,...:.,\s:.
+
+[Star Trek Discovery]
+# The pattern is a PCRE (Perl Compatible Regular Expression) pattern. It is case insensitive.
+pattern=Star\.\Trek\.Discovery\..*
+# destination is (obviously) the destination of the file that match the pattern.
+destination=/home/plex/Medias/Series/Star.Trek.Discovery/Season_{season_number}/Star.Trek.Discovery.S{season_number}E{episode_number}.{episode_quality}.{file_extension}
+# post_cleaning allow for extra characters removing or replacement. This is a yes/no value.
+post_cleaning=yes
+# these are post cleaning rules the form is <characters to replace>:<characters replacement>. It is a comma separated list. The following is the default value.
+post_cleaning_rules=..:.,...:.,\s:.
+
+```
