@@ -51,15 +51,20 @@ destination=/home/plex/Medias/Series/The.Flash.2014/Season_{season_number}/The.F
 post_cleaning=yes
 # these are post cleaning rules the form is <characters to replace>:<characters replacement>. It is a comma separated list. The following is the default value.
 post_cleaning_rules=..:.,...:.,\s:.
+# If file_only is set to yes, bemar will only move and rename files within directories. For example if you have a directory structure like this:
+# 'The.Big.Bang.Theory.S11E05.1080p.HDTV.X264-DIMENSION[rarbg]/':
+#          RARBG.txt  
+#          The.Big.Bang.Theory.S11E05.1080p.HDTV.X264-DIMENSION.mkv  
+#          the.big.bang.theory.1105.1080-dimension.nfo
+#
+# With file_only=yes the only thing that is going to be moved is The.Big.Bang.Theory.S11E05.1080p.HDTV.X264-DIMENSION.mkv according to the pattern.
+file_only=yes
 
 [Star Trek Discovery]
-# The pattern is a PCRE (Perl Compatible Regular Expression) pattern. It is case insensitive.
 pattern=Star\.\Trek\.Discovery\..*
-# destination is (obviously) the destination of the file that match the pattern.
 destination=/home/plex/Medias/Series/Star.Trek.Discovery/Season_{season_number}/Star.Trek.Discovery.S{season_number}E{episode_number}.{episode_quality}.{file_extension}
-# post_cleaning allow for extra characters removing or replacement. This is a yes/no value.
 post_cleaning=yes
-# these are post cleaning rules the form is <characters to replace>:<characters replacement>. It is a comma separated list. The following is the default value.
 post_cleaning_rules=..:.,...:.,\s:.
+file_only=yes
 
 ```
