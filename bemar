@@ -3,6 +3,8 @@
 use strict;
 use warnings;
 use File::Copy;
+use File::Spec;
+use File::Path qw(make_path remove_tree);;
 use Data::Dumper;
 
 ##########################################
@@ -16,7 +18,7 @@ use Data::Dumper;
 ##########################################
 
 my $DEBUG=1;
-my $POST_CLEANING_DEFAULTS='..:.,...:.,\s:.';
+my $POST_CLEANING_DEFAULTS='\.\.\.:.,\.\.:.,\s:.';
 my @ARRAY_KEYS = ('scan','post_cleaning_rules');
 my $config = {};
 # Sections will be stored in RAM to avoid a call to keys() for every file.
@@ -68,7 +70,14 @@ sub loadConfig {
 		next if($line =~ /^\s*$/);
 		if((defined($current_section) && $current_section ne '') && $line =~ /^\s*([^=]+)\s*=\s*(.+)\s*$/){
 			debug_print "\t\t(current_section=$current_section) config defines '$1' with value '$2'\n";
-			$config->{$current_section}->{$1} = $2;
+			my ($key,$val) = ($1,$2);
+			$config->{$current_section}->{$key} = $val;
+			if($val =~ m/^\s*yes\s*$/i){
+				$config->{$current_section}->{$key} = 1;
+			}
+			elsif($val =~ m/^\s*no\s*$/i){
+				$config->{$current_section}->{$key} = 0;
+			}
 		}
 		elsif($line =~ /^\s*\[([^\]]+)\]/){
 			debug_print "\tnew section: $1\n";
@@ -115,11 +124,23 @@ sub loadConfig {
 
 sub parseName {
 	my $name = shift;
-	my $variables = {};
+	my $variables = {
+		'season_number' =>'',
+		'episode_number' =>'',
+		'file_extension' => '',
+		'episode_quality' => '',
+		'serie_name' => ''
+	};
 	if( $name =~ m/s(\d+)e(\d+)/i ){
 		debug_print " (parseName) found season=$1 and episode=$2\n";
 		$variables->{'season_number'} = $1;
 		$variables->{'episode_number'} = $2;
+	}
+	if( $name =~ m/^(.+)[\._\-\s]*s\d+e\d+/i ){
+		$variables->{'serie_name'} = $1;
+		my ($tvolume,$tdirectories,$tfile) = File::Spec->splitpath( $variables->{'serie_name'} );
+		$variables->{'serie_name'} = $tfile;
+		debug_print " (parseName) found serie_name='$tfile'\n";
 	}
 	if( $name =~ m/[\s\.\[\(]{1}(\d+)(p|k)[\s\.\]\)]{1}/i ){
 		debug_print " (parseName) found quality=$1$2\n";
@@ -138,6 +159,36 @@ sub replaceVariables {
 		$file_name =~ s/\{$var\}/$variables->{$var}/gi;
 	}
 	return $file_name;
+}
+
+sub postCleaning {
+	my ($input,$rules) = @_;
+	debug_print " (postCleaning) begin \$input='$input'\n";
+	foreach my $rule (@$rules){
+		my ($match,$replacement) = split(/:/,$rule);
+		debug_print " (postCleaning) match=$match replacement=$replacement\n";
+		$input =~ s/$match/$replacement/gi;
+		debug_print " (postCleaning) loop \$input='$input'\n";
+	}
+	debug_print " (postCleaning) end \$input='$input'\n";
+	return $input;
+}
+
+sub moveFile{
+	my ($source,$destination) = @_;
+	my ($tvolume,$tdirectories,$tfile) = File::Spec->splitpath( $destination );
+# 	debug_print "\$tvolume='$tvolume',\$tdirectories='$tdirectories',\$tfile='$tfile'\n";
+	my $path = $tdirectories;
+	$path = File::Spec->catfile($tvolume,$tdirectories) if($tvolume ne '');
+	debug_print " (moveFile) destination path is '$path'\n";
+	my $errors;
+	unless(-e $path && -d $path){
+		debug_print " (moveFile) Creating path: '$path'\n";
+		make_path($path,{error => \$errors}) ;
+	}
+	
+	# TODO: s/copy/move/
+	copy($source,$destination);
 }
 
 die "Please pass a configuration file as first argument. Example: $0 bemar.cfg\n" unless(defined($ARGV[0]));
@@ -161,7 +212,9 @@ foreach my $source_directory (@{$config->{'general'}->{'scan'}}){
 						foreach my $sub_dir_content (@file_list){
 							my $variables = parseName($sub_dir_content);
 							my $destination_file = replaceVariables($config->{$section}->{'destination'},$variables);
+							$destination_file = postCleaning($destination_file,$config->{$section}->{'post_cleaning_rules'}) if($config->{$section}->{'post_cleaning'});
 							debug_print "\t\t\tMOVING FILE: mv $sub_dir_content $destination_file (from template destination: $config->{$section}->{'destination'})\n";
+							moveFile($sub_dir_content,$destination_file);
 						}
 					}
 					else{
@@ -172,6 +225,8 @@ foreach my $source_directory (@{$config->{'general'}->{'scan'}}){
 					my $variables = parseName($dir_content);
 					my $destination_file = replaceVariables($config->{$section}->{'destination'},$variables);
 					debug_print "\t\t\tMOVING FILE: mv $source_directory/$dir_content $destination_file (from template destination: $config->{$section}->{'destination'})\n";
+					$destination_file = postCleaning($destination_file,$config->{$section}->{'post_cleaning_rules'}) if($config->{$section}->{'post_cleaning'});
+					moveFile("$source_directory/$dir_content",$destination_file);
 				}
 			}
 		}
