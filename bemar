@@ -18,6 +18,7 @@ use Data::Dumper;
 ##########################################
 
 my $DEBUG=1;
+my $APP_NAME='bemar';
 my $POST_CLEANING_DEFAULTS='\.\.\.:.,\.\.:.,\s:.';
 my @ARRAY_KEYS = ('scan','post_cleaning_rules');
 my $config = {};
@@ -27,6 +28,10 @@ my @sections = ();
 sub debug_print {
 	return unless $DEBUG;
 	print "[debug] ",@_;
+}
+
+sub log_print {
+	print "[$APP_NAME] ",@_;
 }
 
 sub ls {
@@ -188,7 +193,7 @@ sub moveFile{
 	}
 	
 	# TODO: s/copy/move/
-	copy($source,$destination);
+	move($source,$destination);
 }
 
 die "Please pass a configuration file as first argument. Example: $0 bemar.cfg\n" unless(defined($ARGV[0]));
@@ -214,11 +219,24 @@ foreach my $source_directory (@{$config->{'general'}->{'scan'}}){
 							my $destination_file = replaceVariables($config->{$section}->{'destination'},$variables);
 							$destination_file = postCleaning($destination_file,$config->{$section}->{'post_cleaning_rules'}) if($config->{$section}->{'post_cleaning'});
 							debug_print "\t\t\tMOVING FILE: mv $sub_dir_content $destination_file (from template destination: $config->{$section}->{'destination'})\n";
+							log_print "moving '$sub_dir_content' to '$destination_file'\n";
 							moveFile($sub_dir_content,$destination_file);
 						}
 					}
 					else{
 						debug_print "\t\t\tMOVING WHOLE DIRECTORY TO DESTINATION\n";
+						my $variables = parseName($dir_content);
+						my $destination_path = replaceVariables($config->{$section}->{'destination'},$variables);
+						debug_print "\t\t\tMOVING FILE: mv $source_directory/$dir_content $destination_path (from template destination: $config->{$section}->{'destination'})\n";
+						$destination_path = postCleaning($destination_path,$config->{$section}->{'post_cleaning_rules'}) if($config->{$section}->{'post_cleaning'});
+						log_print "moving '$source_directory/$dir_content' to '$destination_path'\n";
+						my $errors;
+						unless(-e $destination_path && -d $destination_path){
+							debug_print " (moveFile) Creating path: '$destination_path'\n";
+							make_path($destination_path,{error => \$errors}) ;
+						}
+						# TODO: s/copy/move/
+						move("$source_directory/$dir_content",$destination_path);
 					}
 				}
 				else{
@@ -226,6 +244,7 @@ foreach my $source_directory (@{$config->{'general'}->{'scan'}}){
 					my $destination_file = replaceVariables($config->{$section}->{'destination'},$variables);
 					debug_print "\t\t\tMOVING FILE: mv $source_directory/$dir_content $destination_file (from template destination: $config->{$section}->{'destination'})\n";
 					$destination_file = postCleaning($destination_file,$config->{$section}->{'post_cleaning_rules'}) if($config->{$section}->{'post_cleaning'});
+					log_print "moving '$source_directory/$dir_content' to '$destination_file'\n";
 					moveFile("$source_directory/$dir_content",$destination_file);
 				}
 			}
